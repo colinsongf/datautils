@@ -74,8 +74,8 @@ def padded_batch_fromstring(state, x, y, return_dict=False):
             Ymask[len(y[idx]), idx] = 1. # only the fisrt '<eos>' matters
 
     # Unknown words
-    # X[X >= state['n_sym_source']] = dictX['<unk>']
-    # Y[Y >= state['n_sym_target']] = dictY['<unk>']
+    X[X >= state['n_sym_source']] = dictX['<unk>']
+    Y[Y >= state['n_sym_target']] = dictY['<unk>']
 
     if return_dict:
         return {'x' : X, 'x_mask' : Xmask, 'y': Y, 'y_mask' : Ymask}
@@ -154,8 +154,8 @@ def padded_batch_frombinary(state, x, y, return_dict=False):
             Ymask[len(y[idx]), idx] = 1.
 
     # Unknown words
-    # X[X >= state['n_sym_source']] = dictX['<unk>']
-    # Y[Y >= state['n_sym_target']] = dictY['<unk>']
+    X[X >= state['n_sym_source']] = dictX['<unk>']
+    Y[Y >= state['n_sym_target']] = dictY['<unk>']
 
     if return_dict:
         return {'x' : X, 'x_mask' : Xmask, 'y': Y, 'y_mask' : Ymask}

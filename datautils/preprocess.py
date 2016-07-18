@@ -47,7 +47,7 @@ class Preprocessor(multiprocessing.Process):
     self.delimiter = options.get('delimiter', u'\t')
 
     # Whether to do word / symbol count
-    self.count_sym = options.get('count_sym', True)
+    self.count_sym = options.get('count_sym', False)
     if self.count_sym:
       assert self.counter_queue is not None, \
         'Cannot count symbols without a counter Queue'
@@ -76,6 +76,9 @@ class Preprocessor(multiprocessing.Process):
       # process each line and write to corresponding file(s)
       for lidx, line in enumerate(fi):
         columns = line.strip().split(self.delimiter)
+        if len(columns) != self.num_columns:
+            continue
+        assert len(columns) == self.num_columns, 'Number of columns does not match'
         for cidx, column in enumerate(columns):
           # process the column
           processed = column
@@ -199,20 +202,20 @@ class PreprocessPipeline(object):
 
     # Number of processes to use
     #     - Default: min(num_file, cpu_count * 2), assuming hyper-threading
-    self.num_process = min(self.num_file, options.pop('num_process', multiprocessing.cpu_count() * 2))
+    self.num_process = min(self.num_file, options.get('num_process', multiprocessing.cpu_count() * 2))
     assert self.num_process > 0, 'Number of processes %d no larger than 0' % (self.num_process)
 
     # Whether to create dictionary from processed files
-    self.create_dict = options.pop('create_dict', True)
-    self.special_sym = options.pop('special_sym', [u'<unk>', u'<eos>'])
+    self.create_dict = options.get('create_dict', True)
+    self.special_sym = options.get('special_sym', [u'<unk>', u'<eos>'])
     
     # Whether to created binarized files (transform symbols to indices)
-    self.binarize = options.pop('binarize', False)
+    self.binarize = options.get('binarize', False)
     if self.binarize:
       self.create_dict = True
 
     # Whether to combine files into a single large file
-    self.combine_files = options.pop('combine_files', False)
+    self.combine_files = options.get('combine_files', False)
 
     # After master-only options, the rest should be worker options
     self.worker_options = options

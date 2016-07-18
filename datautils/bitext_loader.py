@@ -53,6 +53,7 @@ class BitextFetcher(threading.Thread):
 
         source_size = os.stat(diter.source_file).st_size
         target_size = os.stat(diter.target_file).st_size
+        print source_size, target_size
 
         if source_size + target_size <= to_byte(diter.max_mem):
             self.can_fit = True
@@ -112,12 +113,15 @@ class BitextFetcher(threading.Thread):
         data_idx = self.shuf_indices[self.shuf_idx]
 
         if self.can_fit:
-            source = self.process(self.sources[data_idx])
-            target = self.process(self.targets[data_idx])
+            source = self.sources[data_idx]
+            target = self.targets[data_idx]
         else:
             soffset, toffset = self.soffsets[data_idx], self.toffsets[data_idx]
-            source = self.process(self.read_mmdata(soffset, self._smm))
-            target = self.process(self.read_mmdata(toffset, self._tmm))
+            source = self.read_mmdata(soffset, self._smm)
+            target = self.read_mmdata(toffset, self._tmm)
+
+        if self.process is not None:
+            source, target = self.process(source), self.process(target)
 
         self.shuf_idx += 1
 
@@ -152,7 +156,9 @@ class BitextFetcher(threading.Thread):
 
                 if len(source) == 0 or len(source) > diter.max_len \
                     or len(target) == 0 or len(target) > diter.max_len:
-                    print soffset, toffset
+                    print '-' * 80
+                    print 'WARNING:', len(source), len(target)
+                    print '-' * 80
                     continue
 
                 source_sents.append(source)
@@ -173,8 +179,8 @@ class BitextIterator(object):
 
     def __init__(self,
                  batch_size,
-                 target_file,
                  source_file,
+                 target_file,
                  dtype="int64",
                  max_mem="2G",
                  queue_size=1000,
@@ -188,7 +194,7 @@ class BitextIterator(object):
 
         self.exit_flag = False
 
-    def start(self, process):
+    def start(self, process=lambda x: x.strip().split()):
         self.queue = Queue.Queue(maxsize=self.queue_size)
         self.gather = BitextFetcher(self, process)
         self.gather.setDaemon(True)
@@ -239,7 +245,7 @@ class HomogenousBitextIterator(BitextIterator):
                     else numpy.arange(len(s))
 
             # yield batch with similar lengths
-            for k in range(len(data)):
+            for k in numpy.random.permutation(len(data)):
                 indices = order[k * self.batch_size:(k+1) * self.batch_size]
                 yield (s[indices], t[indices])
             
