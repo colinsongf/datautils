@@ -47,7 +47,7 @@ class Preprocessor(multiprocessing.Process):
     self.delimiter = options.get('delimiter', u'\t')
 
     # Whether to do word / symbol count
-    self.count_sym = options.get('count_sym', False)
+    self.count_sym = options.get('count_sym', True)
     if self.count_sym:
       assert self.counter_queue is not None, \
         'Cannot count symbols without a counter Queue'
@@ -76,9 +76,6 @@ class Preprocessor(multiprocessing.Process):
       # process each line and write to corresponding file(s)
       for lidx, line in enumerate(fi):
         columns = line.strip().split(self.delimiter)
-        if len(columns) != self.num_columns:
-            continue
-        assert len(columns) == self.num_columns, 'Number of columns does not match'
         for cidx, column in enumerate(columns):
           # process the column
           processed = column
@@ -88,8 +85,7 @@ class Preprocessor(multiprocessing.Process):
           # update counter if needed
           if self.count_sym:
             if self.separate_dict:
-              for cidx in xrange(self.num_columns):
-                counters[cidx].update(processed)
+              counters[cidx].update(processed)
             else:
               counter.update(processed)
           
@@ -180,25 +176,12 @@ class PreprocessPipeline(object):
     self.num_file = len(file_list)
     self.validate_options(options)
 
-  def share_options(self, options):
-    # Encoding for reading and writing files
-    self.encoding = options.get('encoding', 'utf8')
-
-    # Whether to save each column into separate files
-    self.separate_columns = options.get('separate_columns', False)
-    
-    # Expected number of columns per text line
-    if self.separate_columns:
-      self.separate_dict = options.get('separate_dict', False)
-      self.num_columns = options.get('num_columns')
-      print self.separate_dict
-
-    # Whether to delete intermediate files
-    self.clean_files = options.get('clean_files', True)
-
   def validate_options(self, options):
     # Get is used for shared options
     self.output_dir = options.get('output_dir', './')
+
+    # Encoding for reading and writing files
+    self.encoding = options.get('encoding', 'utf8')
 
     # Number of processes to use
     #     - Default: min(num_file, cpu_count * 2), assuming hyper-threading
@@ -214,19 +197,30 @@ class PreprocessPipeline(object):
     if self.binarize:
       self.create_dict = True
 
+    # Whether to save each column into separate files
+    self.separate_columns = options.get('separate_columns', False)
+
+    if self.separate_columns:
+      # Expected number of columns per text line
+      self.num_columns = options.get('num_columns')
+
+    if self.separate_columns and self.create_dict:
+      # Whether to use separate dictionary for each column
+      self.separate_dict = options.get('separate_dict', False)
+
     # Whether to combine files into a single large file
     self.combine_files = options.get('combine_files', False)
+    
+    if self.combine_files:
+      # Whether to delete intermediate files
+      self.clean_files = options.get('clean_files', True)
 
-    # After master-only options, the rest should be worker options
+    # After get master options, partially validate coupled worker options
     self.worker_options = options
 
     # In order to create dictionary, workers must count symbols
     if self.create_dict:
       self.worker_options['count_sym'] = True
-
-    # If combine files, share some additional options with workers
-    if self.combine_files:
-      self.share_options(self.worker_options)
 
   def combine(self, cidx=None):
     suffix = '.out' if cidx is None else '.out.%d' % (cidx)
