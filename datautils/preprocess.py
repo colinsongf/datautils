@@ -32,6 +32,7 @@ class Preprocessor(multiprocessing.Process):
     
     # Expected number of columns per text line
     if self.separate_columns:
+      self.separate_dict = options.get('separate_dict', False)
       self.num_columns = options.get('num_columns')
 
     # How to process each column of a text line
@@ -52,8 +53,14 @@ class Preprocessor(multiprocessing.Process):
         'Cannot count symbols without a counter Queue'
 
   def preprocess(self, file_path):
+    # Create counter(s)
     if self.count_sym:
-      counter = Counter()
+      if self.separate_dict:
+        counters = []
+        for cidx in xrange(self.num_columns):
+          counters.append(Counter())
+      else:
+        counter = Counter()
 
     with io.open(file_path, 'r', encoding=self.encoding) as fi:
       # open output file(s)
@@ -77,7 +84,11 @@ class Preprocessor(multiprocessing.Process):
 
           # update counter if needed
           if self.count_sym:
-            counter.update(processed)
+            if self.separate_dict:
+              for cidx in xrange(self.num_columns):
+                counters[cidx].update(processed)
+            else:
+              counter.update(processed)
           
           # write to file(s)
           if self.separate_columns:
@@ -94,7 +105,11 @@ class Preprocessor(multiprocessing.Process):
         fo.close()
 
     if self.count_sym:
-      self.counter_queue.put(counter)
+      if self.separate_dict:
+        for cidx in xrange(self.num_columns):
+          self.counter_queue[cidx].put(counters[cidx])
+      else:
+        self.counter_queue.put(counter)
 
   def run(self):
     proc_name = self.name
@@ -163,9 +178,6 @@ class PreprocessPipeline(object):
     self.validate_options(options)
 
   def share_options(self, options):
-    # Get is used for shared options
-    self.output_dir = options.get('output_dir', './')
-
     # Encoding for reading and writing files
     self.encoding = options.get('encoding', 'utf8')
 
@@ -174,12 +186,17 @@ class PreprocessPipeline(object):
     
     # Expected number of columns per text line
     if self.separate_columns:
+      self.separate_dict = options.get('separate_dict', False)
       self.num_columns = options.get('num_columns')
+      print self.separate_dict
 
     # Whether to delete intermediate files
     self.clean_files = options.get('clean_files', True)
 
   def validate_options(self, options):
+    # Get is used for shared options
+    self.output_dir = options.get('output_dir', './')
+
     # Number of processes to use
     #     - Default: min(num_file, cpu_count * 2), assuming hyper-threading
     self.num_process = min(self.num_file, options.pop('num_process', multiprocessing.cpu_count() * 2))
@@ -197,7 +214,7 @@ class PreprocessPipeline(object):
     # Whether to combine files into a single large file
     self.combine_files = options.pop('combine_files', False)
 
-    # After pop master-only options, the rest should be worker options
+    # After master-only options, the rest should be worker options
     self.worker_options = options
 
     # In order to create dictionary, workers must count symbols
@@ -225,24 +242,36 @@ class PreprocessPipeline(object):
         if self.clean_files:
           os.remove(part_file_path)
 
-  def create_dictionary(self):
+  def create_dictionary(self, cidx=None):
+    # Get corresponding queue
+    if cidx is not None:
+      counter_queue = self.counter_queue[cidx]
+    else:
+      counter_queue = self.counter_queue
+
+    # Empty counter
     counter = Counter()
     for idx in xrange(len(self.file_list)):
-      counter += self.counter_queue.get()
+      counter += counter_queue.get()
 
-    self.sym2idx_dict = OrderedDict()
+    sym2idx_dict = OrderedDict()
     for sym in self.special_sym:
-      self.sym2idx_dict[sym] = len(self.sym2idx_dict)
+      sym2idx_dict[sym] = len(sym2idx_dict)
       
     for sym, count in counter.most_common():
-      self.sym2idx_dict[sym] = len(self.sym2idx_dict)
+      sym2idx_dict[sym] = len(sym2idx_dict)
 
-    self.idx2sym_dict = OrderedDict()
-    for sym, idx in self.sym2idx_dict.iteritems():
-      self.idx2sym_dict[idx] = sym
+    idx2sym_dict = OrderedDict()
+    for sym, idx in sym2idx_dict.iteritems():
+      idx2sym_dict[idx] = sym
 
-    pkl.dump(self.sym2idx_dict, file('dict.sym2idx.pkl', 'w'))
-    pkl.dump(self.idx2sym_dict, file('dict.idx2sym.pkl', 'w'))
+    if cidx is not None:
+      suffix = '.%d.pkl' % (cidx)
+    else:
+      suffix = '.pkl'
+
+    pkl.dump(sym2idx_dict, file(os.path.join(self.output_dir, 'dict.sym2idx%s' % (suffix)), 'w'))
+    pkl.dump(idx2sym_dict, file(os.path.join(self.output_dir, 'dict.idx2sym%s' % (suffix)), 'w'))
 
   def para_process(self):
     # Create task Queue and put tasks
@@ -252,7 +281,12 @@ class PreprocessPipeline(object):
 
     # Create counter Queue is needed
     if self.create_dict:
-      self.counter_queue = multiprocessing.Queue()
+      if self.separate_dict:
+        self.counter_queue = []
+        for cidx in xrange(self.num_columns):
+          self.counter_queue.append(multiprocessing.Queue())
+      else:
+        self.counter_queue = multiprocessing.Queue()
     else:
       self.counter_queue = None
 
@@ -268,22 +302,35 @@ class PreprocessPipeline(object):
     # Wait for all tasks to finish
     self.task_queue.join()
 
-  def para_binarize(self):
+  def para_binarize(self, cidx=None):
+    if cidx is not None:
+      suffix = '.%d.pkl' % (cidx)
+    else:
+      suffix = '.pkl'
+    
+    sym2idx_dict = pkl.load(file(os.path.join(self.output_dir, 'dict.sym2idx%s' % (suffix)), 'r'))
+
     # Create task Queue and put tasks
     self.task_queue = multiprocessing.JoinableQueue()
     for file_path in self.file_list:
       basename = file_path.rsplit('/', 1)[-1].rsplit('.', 1)[0]
       part_file_path = os.path.join(self.output_dir, basename+'.out')
-      if self.separate_columns:
-        for cidx in xrange(self.num_columns):
-          self.task_queue.put('%s.%d' % (part_file_path, cidx))
+      # Separate dict for each column file
+      if cidx is not None:
+        self.task_queue.put('%s.%d' % (part_file_path, cidx))
       else:
-        self.task_queue.put(part_file_path)
+        # Shared dict for each column file
+        if self.separate_columns:
+          for cidx in xrange(self.num_columns):
+            self.task_queue.put('%s.%d' % (part_file_path, cidx))
+        # Shared dict for one whole file
+        else:
+          self.task_queue.put(part_file_path)
 
     # Spawn workers
     self.workers = []
     for widx in xrange(self.num_process):
-      worker = Binarizer(self.task_queue, self.sym2idx_dict, self.worker_options)
+      worker = Binarizer(self.task_queue, sym2idx_dict, self.worker_options)
       worker.start()
       self.workers.append(worker)
       # use None to signal end of tasks
@@ -302,11 +349,19 @@ class PreprocessPipeline(object):
 
     # create dictionary if needed
     if self.create_dict:
-      self.create_dictionary()
+      if self.separate_dict:
+        for cidx in xrange(self.num_columns):
+          self.create_dictionary(cidx)
+      else:
+        self.create_dictionary()
 
     # Parallel binarize
     if self.binarize:
-      self.para_binarize()
+      if self.separate_dict:
+        for cidx in xrange(self.num_columns):
+          self.para_binarize(cidx)
+      else:
+        self.para_binarize()
 
     # reduce
     if self.combine_files:
