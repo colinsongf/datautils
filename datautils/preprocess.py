@@ -185,22 +185,22 @@ class PreprocessPipeline(object):
 
     # Number of processes to use
     #     - Default: min(num_file, cpu_count * 2), assuming hyper-threading
-    self.num_process = min(self.num_file, options.pop('num_process', multiprocessing.cpu_count() * 2))
+    self.num_process = min(self.num_file, options.get('num_process', multiprocessing.cpu_count() * 2))
     assert self.num_process > 0, 'Number of processes %d no larger than 0' % (self.num_process)
 
     # Whether to create dictionary from processed files
-    self.create_dict = options.pop('create_dict', True)
-    self.special_sym = options.pop('special_sym', [u'<unk>', u'<eos>'])
+    self.create_dict = options.get('create_dict', True)
+    self.special_sym = options.get('special_sym', [u'<unk>', u'<eos>'])
     
     # Whether to created binarized files (transform symbols to indices)
-    self.binarize = options.pop('binarize', False)
+    self.binarize = options.get('binarize', False)
     if self.binarize:
       self.create_dict = True
 
     # Whether to combine files into a single large file
-    self.combine_files = options.pop('combine_files', False)
+    self.combine_files = options.get('combine_files', False)
 
-    # After pop master-only options, the rest should be worker options
+    # After master-only options, the rest should be worker options
     self.worker_options = options
 
     # In order to create dictionary, workers must count symbols
