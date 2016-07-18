@@ -46,7 +46,7 @@ class Preprocessor(multiprocessing.Process):
     self.delimiter = options.get('delimiter', u'\t')
 
     # Whether to do word / symbol count
-    self.count_sym = options.get('count_sym', True)
+    self.count_sym = options.get('count_sym', False)
     if self.count_sym:
       assert self.counter_queue is not None, \
         'Cannot count symbols without a counter Queue'
@@ -69,6 +69,9 @@ class Preprocessor(multiprocessing.Process):
       # process each line and write to corresponding file(s)
       for lidx, line in enumerate(fi):
         columns = line.strip().split(self.delimiter)
+        if len(columns) != self.num_columns:
+            continue
+        assert len(columns) == self.num_columns, 'Number of columns does not match'
         for cidx, column in enumerate(columns):
           # process the column
           processed = column
@@ -163,9 +166,6 @@ class PreprocessPipeline(object):
     self.validate_options(options)
 
   def share_options(self, options):
-    # Get is used for shared options
-    self.output_dir = options.get('output_dir', './')
-
     # Encoding for reading and writing files
     self.encoding = options.get('encoding', 'utf8')
 
@@ -180,6 +180,9 @@ class PreprocessPipeline(object):
     self.clean_files = options.get('clean_files', True)
 
   def validate_options(self, options):
+    # Get is used for shared options
+    self.output_dir = options.get('output_dir', './')
+
     # Number of processes to use
     #     - Default: min(num_file, cpu_count * 2), assuming hyper-threading
     self.num_process = min(self.num_file, options.pop('num_process', multiprocessing.cpu_count() * 2))
