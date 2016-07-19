@@ -10,6 +10,7 @@ import cPickle as pkl
 class Preprocessor(multiprocessing.Process):
   _processors = {
                  'lowercase': lambda x: x.lower(), 
+                 'splitline': lambda x: x.split(),
                  'tokenize': lambda x: word_tokenize(x)
                 }
 
