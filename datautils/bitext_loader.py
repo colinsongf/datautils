@@ -53,7 +53,7 @@ class BitextFetcher(threading.Thread):
 
         source_size = os.stat(diter.source_file).st_size
         target_size = os.stat(diter.target_file).st_size
-        print source_size, target_size
+        # print source_size, target_size
 
         if source_size + target_size <= to_byte(diter.max_mem):
             self.can_fit = True

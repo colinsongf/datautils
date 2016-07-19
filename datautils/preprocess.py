@@ -57,9 +57,7 @@ class Preprocessor(multiprocessing.Process):
     # Create counter(s)
     if self.count_sym:
       if self.separate_dict:
-        counters = []
-        for cidx in xrange(self.num_columns):
-          counters.append(Counter())
+        counters = [Counter() for cidx in xrange(self.num_columns)]
       else:
         counter = Counter()
 
@@ -242,12 +240,9 @@ class PreprocessPipeline(object):
 
   def create_dictionary(self, cidx=None):
     # Get corresponding queue
-    if cidx is not None:
-      counter_queue = self.counter_queue[cidx]
-    else:
-      counter_queue = self.counter_queue
+    counter_queue = self.counter_queue if cidx is None else self.counter_queue[cidx]
 
-    # Empty counter
+    # Create empty counter
     counter = Counter()
     for idx in xrange(len(self.file_list)):
       counter += counter_queue.get()
@@ -263,11 +258,10 @@ class PreprocessPipeline(object):
     for sym, idx in sym2idx_dict.iteritems():
       idx2sym_dict[idx] = sym
 
-    if cidx is not None:
-      suffix = '.%d.pkl' % (cidx)
-    else:
-      suffix = '.pkl'
+    # Decide dictionary suffix
+    suffix = '.pkl' if cidx is None else '.%d.pkl' % (cidx)
 
+    # Save as .pkl files
     pkl.dump(sym2idx_dict, file(os.path.join(self.output_dir, 'dict.sym2idx%s' % (suffix)), 'w'))
     pkl.dump(idx2sym_dict, file(os.path.join(self.output_dir, 'dict.idx2sym%s' % (suffix)), 'w'))
 
@@ -301,11 +295,10 @@ class PreprocessPipeline(object):
     self.task_queue.join()
 
   def para_binarize(self, cidx=None):
-    if cidx is not None:
-      suffix = '.%d.pkl' % (cidx)
-    else:
-      suffix = '.pkl'
+    # Decide dictionary suffix
+    suffix = '.pkl' if cidx is None else '.%d.pkl' % (cidx)
     
+    # Load dictionary
     sym2idx_dict = pkl.load(file(os.path.join(self.output_dir, 'dict.sym2idx%s' % (suffix)), 'r'))
 
     # Create task Queue and put tasks
@@ -334,7 +327,7 @@ class PreprocessPipeline(object):
       # use None to signal end of tasks
       self.task_queue.put(None)
 
-    # wait for all tasks to finish
+    # Wait for all tasks to finish
     self.task_queue.join()
 
   def start(self):
@@ -345,24 +338,27 @@ class PreprocessPipeline(object):
     # Parallel process
     self.para_process()
 
-    # create dictionary if needed
+    # Create dictionary if needed
     if self.create_dict:
+      print 'Create dictionary'
       if self.separate_dict:
         for cidx in xrange(self.num_columns):
           self.create_dictionary(cidx)
       else:
         self.create_dictionary()
 
-    # Parallel binarize
+    # Parallel binarize if needed
     if self.binarize:
+      print 'Parallel binarize'
       if self.separate_dict:
         for cidx in xrange(self.num_columns):
           self.para_binarize(cidx)
       else:
         self.para_binarize()
 
-    # reduce
+    # Combine files if needed
     if self.combine_files:
+      print 'Combine files'
       if self.separate_columns:
         for cidx in xrange(self.num_columns):
           self.combine(cidx)
