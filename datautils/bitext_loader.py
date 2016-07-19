@@ -107,7 +107,10 @@ class BitextFetcher(threading.Thread):
 
     def reset(self):
         self.shuf_idx = 0
-        self.shuf_indices = numpy.random.permutation(self.data_len)
+        if self.parent.shuffle:
+            self.shuf_indices = numpy.random.permutation(self.data_len)
+        else:
+            self.shuf_indices = numpy.arange(self.data_len)
 
     def fetch_data(self):
         data_idx = self.shuf_indices[self.shuf_idx]
