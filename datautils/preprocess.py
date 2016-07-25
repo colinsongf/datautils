@@ -33,7 +33,6 @@ class Preprocessor(multiprocessing.Process):
     
     # Expected number of columns per text line
     if self.separate_columns:
-      self.separate_dict = options.get('separate_dict', False)
       self.num_columns = options.get('num_columns')
 
     # How to process each column of a text line
@@ -52,6 +51,7 @@ class Preprocessor(multiprocessing.Process):
     if self.count_sym:
       assert self.counter_queue is not None, \
         'Cannot count symbols without a counter Queue'
+      self.separate_dict = options.get('separate_dict', False)
 
   def preprocess(self, file_path):
     # Create counter(s)
@@ -63,7 +63,7 @@ class Preprocessor(multiprocessing.Process):
 
     with io.open(file_path, 'r', encoding=self.encoding) as fi:
       # open output file(s)
-      basename = file_path.rsplit('/', 1)[-1].rsplit('.', 1)[0]
+      basename = file_path.rsplit('/', 1)[-1]
       if self.separate_columns:
         fos = [io.open(os.path.join(self.output_dir, '%s.out.%d' % (basename, cidx)), 
                                     'w', encoding=self.encoding) 
@@ -203,9 +203,13 @@ class PreprocessPipeline(object):
       # Expected number of columns per text line
       self.num_columns = options.get('num_columns')
 
-    if self.separate_columns and self.create_dict:
-      # Whether to use separate dictionary for each column
-      self.separate_dict = options.get('separate_dict', False)
+    if self.create_dict:
+        # Cut-off threshold for dictionary
+        self.dict_threshold = options.get('dict_threshold', 0)
+        # Whether to use separate dictionary for each column
+        self.separate_dict = options.get('separate_dict', False)
+        if self.separate_dict:
+          assert self.separate_columns, 'Separating dict requires separating columns'
 
     # Whether to combine files into a single large file
     self.combine_files = options.get('combine_files', False)
@@ -220,6 +224,8 @@ class PreprocessPipeline(object):
     # In order to create dictionary, workers must count symbols
     if self.create_dict:
       self.worker_options['count_sym'] = True
+    else:
+      self.worker_options['count_sym'] = False
 
   def combine(self, cidx=None):
     suffix = '.out' if cidx is None else '.out.%d' % (cidx)
@@ -229,7 +235,7 @@ class PreprocessPipeline(object):
     with io.open(os.path.join(self.output_dir, 'combined'+suffix), \
                  'w', encoding=self.encoding) as fo:
       for file_path in self.file_list:
-        basename = file_path.rsplit('/', 1)[-1].rsplit('.', 1)[0]
+        basename = file_path.rsplit('/', 1)[-1]
         part_file_path = os.path.join(self.output_dir, basename+suffix)
         with io.open(part_file_path, 'r', encoding=self.encoding) as fi:
           for lidx, line in enumerate(fi):
@@ -252,7 +258,8 @@ class PreprocessPipeline(object):
       sym2idx_dict[sym] = len(sym2idx_dict)
       
     for sym, count in counter.most_common():
-      sym2idx_dict[sym] = len(sym2idx_dict)
+      if count >= self.dict_threshold:
+        sym2idx_dict[sym] = len(sym2idx_dict)
 
     idx2sym_dict = OrderedDict()
     for sym, idx in sym2idx_dict.iteritems():
@@ -304,7 +311,7 @@ class PreprocessPipeline(object):
     # Create task Queue and put tasks
     self.task_queue = multiprocessing.JoinableQueue()
     for file_path in self.file_list:
-      basename = file_path.rsplit('/', 1)[-1].rsplit('.', 1)[0]
+      basename = file_path.rsplit('/', 1)[-1]
       part_file_path = os.path.join(self.output_dir, basename+'.out')
       # Separate dict for each column file
       if cidx is not None:
